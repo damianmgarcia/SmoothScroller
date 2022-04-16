@@ -45,10 +45,10 @@ bodySmoothScroller.scroll({
 - **easing** — _string | array_ — The desired scroll easing _(default: "ease")_
   - string — _keyword_ — "ease", "ease-in", "ease-in-out", "ease-out", "linear"
   - array — _control point coordinates_ — [ P<sub>1</sub>x, P<sub>1</sub>y, P<sub>2</sub>x, P<sub>2</sub>y ]
-    - _P<sub>1</sub>x_ — _number [0,1]_ — The desired P<sub>1</sub>x
-    - _P<sub>1</sub>y_ — _number_ — The desired P<sub>1</sub>y
-    - _P<sub>2</sub>x_ — _number [0,1]_ — The desired P<sub>2</sub>x
-    - _P<sub>2</sub>y_ — _number_ — The desired P<sub>2</sub>y
+    - P<sub>1</sub>x — _number [0,1]_ — The desired P<sub>1</sub>x
+    - P<sub>1</sub>y — _number_ — The desired P<sub>1</sub>y
+    - P<sub>2</sub>x — _number [0,1]_ — The desired P<sub>2</sub>x
+    - P<sub>2</sub>y — _number_ — The desired P<sub>2</sub>y
 - **stopScrollOnPointerDown** — _boolean_ — The desired behavior on scroll container pointerdown events _(default: true)_
 
 ### Example of Scrolling:
