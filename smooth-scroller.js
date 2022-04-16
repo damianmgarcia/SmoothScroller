@@ -1,113 +1,107 @@
+import {
+  getBrowserHeuristics,
+  validateArgument,
+} from "https://damianmgarcia.com/scripts/modules/utilities.js";
+
 const browserHeuristics = getBrowserHeuristics();
 
 class SmoothScroller {
-  static allSmoothScrollers = [];
-  static pointerIsDown;
-
-  #cubicBezierSolver;
-  #scrollContainer;
-  #defaultScrollDuration;
-  #defaultScrollEasing;
-  #stopScrollOnPointerDown;
-  #onSmoothScrollPointerDown;
-  #onSmoothScrollPointerUp;
-  #onSmoothScrollStart;
-  #onSmoothScroll;
-  #onSmoothScrollStop;
-
-  constructor(
+  static scrollerMap = new Map();
+  static scroll({
     scrollContainer,
-    {
-      defaultScrollDuration = 600,
-      defaultScrollEasing = [0.25, 0.1, 0.25, 1],
-      stopScrollOnPointerDown = true,
-      onSmoothScrollPointerDown,
-      onSmoothScrollPointerUp,
-      onSmoothScrollStart,
-      onSmoothScroll,
-      onSmoothScrollStop,
-    } = {}
-  ) {
-    if (!(scrollContainer instanceof Element))
-      throw new TypeError("scrollContainer must be an instance of Element");
+    x,
+    y,
+    duration,
+    easing,
+    stopScrollOnPointerDown,
+  } = {}) {
+    const matchingScroller = this.scrollerMap.get(scrollContainer);
 
-    if (!Number.isFinite(defaultScrollDuration))
-      throw new TypeError("scrollDuration must be a finite number");
+    const scroller = matchingScroller
+      ? matchingScroller
+      : new this(scrollContainer);
 
-    if (typeof stopScrollOnPointerDown != "boolean")
-      throw new TypeError("stopScrollOnPointerDown must be of type boolean");
+    return scroller.scroll({
+      x,
+      y,
+      duration,
+      easing,
+      stopScrollOnPointerDown,
+    });
+  }
 
-    if (
-      (onSmoothScrollPointerDown &&
-        typeof onSmoothScrollPointerDown != "function") ||
-      (onSmoothScrollPointerUp &&
-        typeof onSmoothScrollPointerUp != "function") ||
-      (onSmoothScrollStart && typeof onSmoothScrollStart != "function") ||
-      (onSmoothScroll && typeof onSmoothScroll != "function") ||
-      (onSmoothScrollStop && typeof onSmoothScrollStop != "function")
-    )
-      throw new TypeError("Callback must be of type function");
+  #scrollContainer;
+
+  constructor(scrollContainer) {
+    validateArgument("scrollContainer", scrollContainer, {
+      allowedPrototypes: [Element],
+    });
+
+    if (SmoothScroller.scrollerMap.has(scrollContainer))
+      throw new Error(
+        "A SmoothScroller instance for this scrollContainer already exists"
+      );
 
     this.#scrollContainer = scrollContainer;
-    this.#defaultScrollDuration = defaultScrollDuration;
-    this.#cubicBezierSolver = new CubicBezierSolver(defaultScrollEasing);
-    this.#defaultScrollEasing = defaultScrollEasing;
-    this.#stopScrollOnPointerDown = stopScrollOnPointerDown;
-    this.#onSmoothScrollPointerDown = onSmoothScrollPointerDown;
-    this.#onSmoothScrollPointerUp = onSmoothScrollPointerUp;
-    this.#onSmoothScrollStart = onSmoothScrollStart;
-    this.#onSmoothScroll = onSmoothScroll;
-    this.#onSmoothScrollStop = onSmoothScrollStop;
 
     this.#scrollContainer.addEventListener("pointerdown", (event) => {
-      if (SmoothScroller.pointerIsDown) return;
-      SmoothScroller.pointerIsDown = true;
       event.target.setPointerCapture(event.pointerId);
       if (this.#stopScrollOnPointerDown)
-        this.abortPriorScrolls({
-          abortedBy: "Pointer down on scroll container",
-        });
-      if (this.#onSmoothScrollPointerDown)
-        this.#onSmoothScrollPointerDown(
-          this.getEventData({
-            eventType: "onSmoothScrollPointerDown",
-          })
-        );
+        if (this.#resolve)
+          this.abortPriorScrolls({
+            interruptedBy: "Pointer down on scroll container",
+          });
+
+      const smoothScrollPointerDownEvent = new CustomEvent(
+        "smoothScrollPointerDown",
+        {
+          bubbles: true,
+          cancelable: true,
+          detail: this.getEventData(),
+        }
+      );
+      this.#scrollContainer.dispatchEvent(smoothScrollPointerDownEvent);
     });
 
     this.#scrollContainer.addEventListener("pointerup", () => {
-      SmoothScroller.pointerIsDown = false;
-      if (this.#onSmoothScrollPointerUp)
-        this.#onSmoothScrollPointerUp(
-          this.getEventData({
-            eventType: "onSmoothScrollPointerUp",
-          })
-        );
+      const smoothScrollPointerUpEvent = new CustomEvent(
+        "smoothScrollPointerUp",
+        {
+          bubbles: true,
+          cancelable: true,
+          detail: this.getEventData(),
+        }
+      );
+      this.#scrollContainer.dispatchEvent(smoothScrollPointerUpEvent);
     });
 
     this.#scrollContainer.addEventListener("pointercancel", () => {
-      SmoothScroller.pointerIsDown = false;
-      if (this.#onSmoothScrollPointerUp)
-        this.#onSmoothScrollPointerUp(
-          this.getEventData({
-            eventType: "onSmoothScrollPointerUp",
-          })
-        );
+      const smoothScrollPointerUpEvent = new CustomEvent(
+        "smoothScrollPointerUp",
+        {
+          bubbles: true,
+          cancelable: true,
+          detail: this.getEventData(),
+        }
+      );
+      this.#scrollContainer.dispatchEvent(smoothScrollPointerUpEvent);
     });
 
-    SmoothScroller.allSmoothScrollers.push(this);
+    SmoothScroller.scrollerMap.set(scrollContainer, this);
   }
 
   get scrollContainer() {
     return this.#scrollContainer;
   }
 
-  #isCurrentlyScrolling = false;
+  #isScrolling = false;
 
-  get isCurrentlyScrolling() {
-    return this.#isCurrentlyScrolling;
+  get isScrolling() {
+    return this.#isScrolling;
   }
 
+  #cubicBezierSolver;
+  #stopScrollOnPointerDown;
   #scrollDistanceX;
   #scrollDistanceY;
   #scrollRafId;
@@ -118,50 +112,60 @@ class SmoothScroller {
   #elapsedTime;
   #resolve;
 
-  async smoothScrollTo(
+  async scroll(
     {
       x = this.#scrollContainer.scrollLeft,
-      y = this.#scrollContainer.scrollLeft,
-      duration = this.#defaultScrollDuration,
-      easing = this.#defaultScrollEasing,
+      y = this.#scrollContainer.scrollTop,
+      duration = 600,
+      easing = "ease",
+      stopScrollOnPointerDown = true,
     } = {},
     newSmoothScroll = true,
     currentTime
   ) {
     if (newSmoothScroll) {
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        this.abortPriorScrolls({ abortedBy: "New smooth scroll" });
-        return new Promise((resolve) => {
-          this.#resolve = resolve;
-          return this.abortPriorScrolls({
-            abortedBy: "TypeError: X and Y must be finite numbers",
-          });
-        });
+      validateArgument("x", x, {
+        allowedTypes: ["number"],
+      });
+
+      validateArgument("y", y, {
+        allowedTypes: ["number"],
+      });
+
+      validateArgument("duration", duration, {
+        allowedTypes: ["number"],
+        allowedMin: 0,
+        allowFiniteNumbersOnly: true,
+      });
+
+      validateArgument("stopScrollOnPointerDown", stopScrollOnPointerDown, {
+        allowedTypes: ["boolean"],
+      });
+
+      if (typeof easing === "string") {
+        easing = CubicBezierSolver.easingKeywordMap.get(easing);
       }
 
-      this.abortPriorScrolls({ abortedBy: "New smooth scroll" });
+      if (!this.#cubicBezierSolver) {
+        this.#cubicBezierSolver = new CubicBezierSolver(easing);
+      } else if (this.#cubicBezierSolver) {
+        const controlPointsMatchCurrentControlPoints =
+          this.#cubicBezierSolver.controlPointsMatchCurrentControlPoints(
+            ...easing
+          );
+        if (!controlPointsMatchCurrentControlPoints)
+          this.#cubicBezierSolver = new CubicBezierSolver(easing);
+      }
 
-      const smoothScrollEvent = new CustomEvent("smoothscroll");
-      this.#scrollContainer.dispatchEvent(smoothScrollEvent); // MomentumScroller.js listens to and stops scrolls on this event to prevent scroll interference
+      if (this.#resolve)
+        this.abortPriorScrolls({ interruptedBy: "New smooth scroll" });
 
       if (browserHeuristics.isIOsSafari) {
         this.#scrollContainer.style.setProperty("overflow", "hidden");
       } // Stops Safari's momentum scrolling to prevent scroll interference
 
-      this.#isCurrentlyScrolling = true;
-
-      if (typeof easing == "string") {
-        const keyword = easing;
-        easing = CubicBezierSolver.getControlPointsFromKeyword(keyword);
-      }
-
-      const controlPointsMatchCurrentControlPoints =
-        this.#cubicBezierSolver.controlPointsMatchCurrentControlPoints(
-          ...easing
-        );
-      if (!controlPointsMatchCurrentControlPoints)
-        this.#cubicBezierSolver = new CubicBezierSolver(easing);
-
+      this.#isScrolling = true;
+      this.#stopScrollOnPointerDown = stopScrollOnPointerDown;
       this.#scrollStartingPointX = this.#scrollContainer.scrollLeft;
       this.#scrollStartingPointY = this.#scrollContainer.scrollTop;
 
@@ -186,7 +190,6 @@ class SmoothScroller {
 
       this.#scrollDistanceX = limitCorrectedX - this.#scrollStartingPointX;
       this.#scrollDistanceY = limitCorrectedY - this.#scrollStartingPointY;
-      this.#duration = duration;
 
       if (
         Math.abs(this.#scrollDistanceX) < 1 &&
@@ -194,14 +197,14 @@ class SmoothScroller {
       ) {
         return new Promise((resolve) => {
           this.#resolve = resolve;
-          return this.abortPriorScrolls({
-            abortedBy: "X and Y scroll distance < 1",
-          });
+          return this.abortPriorScrolls();
         });
       } else if (
         Math.abs(this.#scrollDistanceX) >= 1 ||
         Math.abs(this.#scrollDistanceY) >= 1
       ) {
+        this.#duration = duration;
+
         if (duration <= 0) {
           this.#scrollContainer.scrollTo(limitCorrectedX, limitCorrectedY);
           return new Promise((resolve) => {
@@ -212,7 +215,7 @@ class SmoothScroller {
           return new Promise((resolve) => {
             this.#resolve = resolve;
             this.#scrollRafId = requestAnimationFrame((currentTime) => {
-              this.smoothScrollTo(
+              this.scroll(
                 {
                   x,
                   y,
@@ -230,10 +233,13 @@ class SmoothScroller {
 
     if (!this.#startTime) {
       this.#startTime = currentTime;
-      if (this.#onSmoothScrollStart)
-        this.#onSmoothScrollStart(
-          this.getEventData({ eventType: "onSmoothScrollStart" })
-        );
+
+      const smoothScrollStartEvent = new CustomEvent("smoothScrollStart", {
+        bubbles: true,
+        cancelable: true,
+        detail: this.getEventData(),
+      });
+      this.#scrollContainer.dispatchEvent(smoothScrollStartEvent);
     }
 
     this.#elapsedTime = currentTime - this.#startTime;
@@ -256,18 +262,23 @@ class SmoothScroller {
       this.#scrollContainer.scrollTop = nextScrollY;
     }
 
-    if (this.#onSmoothScroll)
-      this.#onSmoothScroll(this.getEventData({ eventType: "onSmoothScroll" }));
+    const smoothScrollEvent = new CustomEvent("smoothScroll", {
+      bubbles: true,
+      cancelable: true,
+      detail: this.getEventData(),
+    });
+    this.#scrollContainer.dispatchEvent(smoothScrollEvent);
 
     if (elapsedTimeRatio < 1) {
-      this.#isCurrentlyScrolling = true;
+      this.#isScrolling = true;
       this.#scrollRafId = requestAnimationFrame((currentTime) => {
-        this.smoothScrollTo(
+        this.scroll(
           {
             x,
             y,
             duration,
             easing,
+            stopScrollOnPointerDown,
           },
           false,
           currentTime
@@ -281,12 +292,12 @@ class SmoothScroller {
   abortPriorScrolls(extraData = {}) {
     if (this.#resolve) this.#resolve(this.getEventData(extraData));
 
-    if (this.#onSmoothScrollStop)
-      this.#onSmoothScrollStop(
-        this.getEventData(
-          Object.assign(extraData, { eventType: "onSmoothScrollStop" })
-        )
-      );
+    const smoothScrollStopEvent = new CustomEvent("smoothScrollStop", {
+      bubbles: true,
+      cancelable: true,
+      detail: this.getEventData(extraData),
+    });
+    this.#scrollContainer.dispatchEvent(smoothScrollStopEvent);
 
     if (browserHeuristics.isIOsSafari) {
       this.#scrollContainer.style.removeProperty("overflow");
@@ -301,12 +312,12 @@ class SmoothScroller {
     this.#duration = null;
     this.#elapsedTime = null;
     this.#resolve = null;
-    this.#isCurrentlyScrolling = false;
+    this.#isScrolling = false;
   }
 
   getEventData(extraData) {
     const eventData = {
-      abortedBy: null,
+      interruptedBy: null,
       x: this.#scrollContainer.scrollLeft,
       y: this.#scrollContainer.scrollTop,
       duration: this.#duration,
@@ -315,7 +326,7 @@ class SmoothScroller {
       smoothScroller: this,
     };
 
-    if (extraData && typeof extraData == "object")
+    if (extraData && typeof extraData === "object")
       Object.assign(eventData, extraData);
 
     return eventData;
@@ -349,21 +360,13 @@ class SmoothScroller {
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 class CubicBezierSolver {
-  static getControlPointsFromKeyword(keyword) {
-    if (keyword == "ease") {
-      return [0.25, 0.1, 0.25, 1];
-    } else if (keyword == "ease-in") {
-      return [0.42, 0, 1, 1];
-    } else if (keyword == "ease-out") {
-      return [0, 0, 0.58, 1];
-    } else if (keyword == "ease-in-out") {
-      return [0.42, 0, 0.58, 1];
-    } else if (keyword == "linear") {
-      return [0, 0, 1, 1];
-    } else {
-      throw new Error("Non-standard cubic-bezier function keyword");
-    }
-  }
+  static easingKeywordMap = new Map([
+    ["ease", [0.25, 0.1, 0.25, 1]],
+    ["ease-in", [0.42, 0, 1, 1]],
+    ["ease-out", [0, 0, 0.58, 1]],
+    ["ease-in-out", [0.42, 0, 0.58, 1]],
+    ["linear", [0, 0, 1, 1]],
+  ]);
 
   #controlPoints;
   #ax;
@@ -374,8 +377,7 @@ class CubicBezierSolver {
   #cy;
 
   constructor(controlPoints) {
-    const validatedControlPoints = cubicBezierControlPointValidator();
-
+    const validatedControlPoints = easingValidator(controlPoints);
     const [p1x, p1y, p2x, p2y] = validatedControlPoints;
 
     this.#controlPoints = {
@@ -393,48 +395,56 @@ class CubicBezierSolver {
     this.#by = 3.0 * (p2y - p1y) - this.#cy;
     this.#ay = 1.0 - this.#cy - this.#by;
 
-    function cubicBezierControlPointValidator() {
-      if (!controlPoints) throw new TypeError("No control points");
+    function easingValidator(easing) {
+      validateArgument("easing", easing, {
+        allowedTypes: ["string", "array"],
+      });
 
-      if (typeof controlPoints == "string") {
-        const keyword = controlPoints;
-        controlPoints = CubicBezierSolver.getControlPointsFromKeyword(keyword);
-      } else if (Array.isArray(controlPoints)) {
-        if (controlPoints.length != 4)
-          throw new Error("controlPoints must include 4 control points");
-
-        if (
-          controlPoints.some(
-            (item) => typeof item != "number" || !Number.isFinite(item)
-          )
-        )
-          throw new TypeError("Control points must be finite numbers");
-
-        if (
-          controlPoints[0] < 0 ||
-          controlPoints[0] > 1 ||
-          controlPoints[2] < 0 ||
-          controlPoints[2] > 1
-        )
-          throw new RangeError(
-            "x1 and x2 control points must be within the range [0, 1]"
-          );
-      } else {
-        throw new TypeError(
-          "controlPoints must be of type array or a standard easing keyword of type string"
+      if (typeof easing === "string") {
+        validateArgument("easing", easing, {
+          allowedValues: Array.from(CubicBezierSolver.easingKeywordMap.keys()),
+        });
+        easing = CubicBezierSolver.easingKeywordMap.get(easing);
+      } else if (Array.isArray(easing)) {
+        validateArgument("easing", easing.length, {
+          allowedValues: [4],
+          customErrorMessage:
+            "easing must comprise 4 numbers, e.g. [ 0, 0.25, 0.1, 0.25]",
+        });
+        easing.forEach((controlPoint) =>
+          validateArgument("easing values", controlPoint, {
+            allowedTypes: ["number"],
+          })
         );
+        validateArgument("x1", easing[0], {
+          allowedMin: 0,
+          allowedMax: 1,
+        });
+        validateArgument("x2", easing[2], {
+          allowedMin: 0,
+          allowedMax: 1,
+        });
+
+        // Prevent precision loss through y-value limitation; no BigInts
+        easing[1] = yLimiter(easing[1]);
+        easing[3] = yLimiter(easing[3]);
+
+        function yLimiter(y) {
+          const limit = Math.floor(Number.MAX_SAFE_INTEGER / 6);
+          return Math.abs(y) < limit ? y : limit;
+        }
       }
 
-      return controlPoints;
+      return easing;
     }
   }
 
   controlPointsMatchCurrentControlPoints(p1x, p1y, p2x, p2y) {
     return (
-      p1x == this.#controlPoints.p1x &&
-      p1y == this.#controlPoints.p1y &&
-      p2x == this.#controlPoints.p2x &&
-      p2y == this.#controlPoints.p2y
+      p1x === this.#controlPoints.p1x &&
+      p1y === this.#controlPoints.p1y &&
+      p2x === this.#controlPoints.p2x &&
+      p2y === this.#controlPoints.p2y
     );
   }
 
@@ -451,7 +461,11 @@ class CubicBezierSolver {
   }
 
   solveCurveX(x, epsilon) {
-    if (x < 0 || x > 1) throw new Error("x must be within range [0, 1]");
+    validateArgument("x", x, {
+      allowedTypes: ["number"],
+      allowedMin: 0,
+      allowedMax: 1,
+    });
 
     // Newton's
     let t0, t1, t2, x2, d2;
@@ -485,35 +499,6 @@ class CubicBezierSolver {
   solve(x, epsilon) {
     return this.sampleCurveY(this.solveCurveX(x, epsilon));
   }
-}
-
-function getBrowserHeuristics() {
-  const userAgent = navigator.userAgent.toLowerCase();
-
-  const isChromium =
-    navigator?.userAgentData?.brands.some(
-      (brandInformation) => brandInformation.brand == "Chromium"
-    ) || /Chrome\/[.0-9]*/.test(navigator.userAgent);
-
-  const isSafari =
-    !isChromium &&
-    userAgent.includes("applewebkit/") &&
-    !userAgent.includes("chrome/") &&
-    !userAgent.includes("firefox/") &&
-    !userAgent.includes("edg/") &&
-    !userAgent.includes("opr/");
-
-  const isIOsSafari =
-    isSafari &&
-    (navigator?.standalone === true || navigator?.standalone === false);
-
-  const browserHeuristics = {
-    isChromium: isChromium,
-    isSafari: isSafari,
-    isIOsSafari: isIOsSafari,
-  };
-
-  return browserHeuristics;
 }
 
 export { SmoothScroller };
