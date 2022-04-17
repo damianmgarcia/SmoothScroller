@@ -31,8 +31,10 @@ SmoothScroller.scroll({
 });
 
 // Instance method (explicit instantiation of new SmoothScroller)
-const bodySmoothScroller = new SmoothScroller(document.querySelector("body"));
-bodySmoothScroller.scroll({
+const smoothScrollerInstance = new SmoothScroller(
+  document.querySelector("body")
+);
+smoothScrollerInstance.scroll({
   ...scrollOptions,
 });
 ```
@@ -68,9 +70,9 @@ SmoothScroller.scroll({
 
 - **smoothScrollPointerDown** — Dispatches on scroll container pointerdown events
 - **smoothScrollPointerUp** — Dispatches on scroll container pointerup events
-- **smoothScrollStart** — Dispatches once when a smooth scroll starts
+- **smoothScrollStart** — Dispatches when a smooth scroll starts
 - **smoothScroll** — Dispatches continuously while smooth scrolling
-- **smoothScrollStop** — Dispatches once when a smooth scroll stops
+- **smoothScrollStop** — Dispatches when a smooth scroll stops
 
 ### Event Data:
 
