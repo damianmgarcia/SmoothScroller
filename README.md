@@ -118,7 +118,7 @@ if (scrollData.interruptedBy !== null) {
 
 ### The isScrolling Property:
 
-An instance's isScrolling property tells you if it is scrolling or not
+An instance's <code>isScrolling</code> property tells you if it is scrolling or not
 
 ```javascript
 if (smoothScrollerInstance.isScrolling) {
@@ -128,7 +128,7 @@ if (smoothScrollerInstance.isScrolling) {
 
 ### The SmoothScroller Map:
 
-The static property, SmoothScroller.scrollerMap, is a map of scroll containers mapped to their instances. Since it is a JavaScript [Map](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map) object, you can use any of the available methods that Map provides.
+The static property, <code>SmoothScroller.scrollerMap</code>, is a map of scroll containers mapped to their instances. Since it is a JavaScript [Map](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map) object, you can use any of the available methods that Map provides.
 
 Since the map is iterable, one of many potential uses could be to iterate through all scrollers and synchronize multiple scrolls:
 
