@@ -77,8 +77,9 @@ SmoothScroller.scroll({
 ### Event Data:
 
 - **interruptedBy** — The cause of a scroll's interruption if it was interrupted; otherwise, null.
-- **x** — The x position of the scroll container
-- **y** — The y position of the scroll container
+- **startPoint** — The starting coordinates
+- **endPoint** — The ending coordinates
+- **distance** — The total scroll distance
 - **duration** — The requested duration of the scroll
 - **elapsedTime** — The elapsed time of the scroll
 - **scrollContainer** — Reference to the scroll container

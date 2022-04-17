@@ -318,8 +318,15 @@ class SmoothScroller {
   getEventData(extraData) {
     const eventData = {
       interruptedBy: null,
-      x: this.#scrollContainer.scrollLeft,
-      y: this.#scrollContainer.scrollTop,
+      startPoint: [this.#scrollStartingPointX, this.#scrollStartingPointY],
+      endPoint: [
+        this.#scrollContainer.scrollLeft,
+        this.#scrollContainer.scrollTop,
+      ],
+      distance: Math.hypot(
+        Math.abs(this.#scrollStartingPointX - this.#scrollContainer.scrollLeft),
+        Math.abs(this.#scrollStartingPointY - this.#scrollContainer.scrollTop)
+      ),
       duration: this.#duration,
       elapsedTime: this.#elapsedTime,
       scrollContainer: this.#scrollContainer,
