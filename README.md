@@ -4,6 +4,8 @@
 
 SmoothScroller is a JavaScript module that provides advanced, easy-to-use smooth scrolling functionality for your website. It allows you to customize smooth scrolling properties, such as duration and easing, to create a more delightful experience for your users. Additionally, it includes advanced features such as scroll events and promises. If you would like to see it in action, check out the demos at [damianmgarcia.com](https://damianmgarcia.com).
 
+Also, check out [MomentumScroller](https://github.com/damianmgarcia/MomentumScroller). It is JavaScript module that provides advanced, easy-to-use momentum scrolling functionality for your website's mouse-users and is designed to work well with SmoothScroller.
+
 ## **Features**
 
 - Customizable Scroll Duration
