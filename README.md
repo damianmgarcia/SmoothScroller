@@ -13,7 +13,7 @@ SmoothScroller is a JavaScript module that provides advanced, easy-to-use smooth
 
 ## **Installation**
 
-[Import](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import) the SmoothScroller module:
+### [Import](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import) the SmoothScroller module:
 
 ```javascript
 import { SmoothScroller } from "https://damianmgarcia.com/scripts/modules/smooth-scroller.js";
