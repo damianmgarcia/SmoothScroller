@@ -46,11 +46,10 @@ class SmoothScroller {
 
     this.#scrollContainer.addEventListener("pointerdown", (event) => {
       event.target.setPointerCapture(event.pointerId);
-      if (this.#stopScrollOnPointerDown)
-        if (this.#resolve)
-          this.abortPriorScrolls({
-            interruptedBy: "Pointer down on scroll container",
-          });
+      if (this.#stopScrollOnPointerDown && this.#resolve)
+        this.abortPriorScrolls({
+          interruptedBy: "Pointer down on scroll container",
+        });
 
       const smoothScrollPointerDownEvent = new CustomEvent(
         "smoothScrollPointerDown",
@@ -120,10 +119,10 @@ class SmoothScroller {
       easing = "ease",
       stopScrollOnPointerDown = true,
     } = {},
-    newSmoothScroll = true,
-    currentTime
+    currentTime = NaN
   ) {
-    if (newSmoothScroll) {
+    const isNewScroll = Number.isNaN(currentTime);
+    if (isNewScroll) {
       validateArgument("x", x, {
         allowedTypes: ["number"],
       });
@@ -169,40 +168,29 @@ class SmoothScroller {
       this.#scrollStartingPointX = this.#scrollContainer.scrollLeft;
       this.#scrollStartingPointY = this.#scrollContainer.scrollTop;
 
+      const leftEdge = 0;
+      const rightEdge =
+        this.#scrollContainer.scrollWidth - this.#scrollContainer.clientWidth;
       const limitCorrectedX =
-        x < 0
-          ? 0
-          : x >
-            this.#scrollContainer.scrollWidth -
-              this.#scrollContainer.clientWidth
-          ? this.#scrollContainer.scrollWidth -
-            this.#scrollContainer.clientWidth
-          : x;
+        x < leftEdge ? leftEdge : x > rightEdge ? rightEdge : x;
+
+      const topEdge = 0;
+      const bottomEdge =
+        this.#scrollContainer.scrollHeight - this.#scrollContainer.clientHeight;
       const limitCorrectedY =
-        y < 0
-          ? 0
-          : y >
-            this.#scrollContainer.scrollHeight -
-              this.#scrollContainer.clientHeight
-          ? this.#scrollContainer.scrollHeight -
-            this.#scrollContainer.clientHeight
-          : y;
+        y < topEdge ? topEdge : y > bottomEdge ? bottomEdge : y;
 
       this.#scrollDistanceX = limitCorrectedX - this.#scrollStartingPointX;
       this.#scrollDistanceY = limitCorrectedY - this.#scrollStartingPointY;
 
-      if (
-        Math.abs(this.#scrollDistanceX) < 1 &&
-        Math.abs(this.#scrollDistanceY) < 1
-      ) {
+      const absoluteScrollDistanceX = Math.abs(this.#scrollDistanceX);
+      const absoluteScrollDistanceY = Math.abs(this.#scrollDistanceY);
+      if (absoluteScrollDistanceX < 1 && absoluteScrollDistanceY < 1) {
         return new Promise((resolve) => {
           this.#resolve = resolve;
           return this.abortPriorScrolls();
         });
-      } else if (
-        Math.abs(this.#scrollDistanceX) >= 1 ||
-        Math.abs(this.#scrollDistanceY) >= 1
-      ) {
+      } else if (absoluteScrollDistanceX >= 1 || absoluteScrollDistanceY >= 1) {
         this.#duration = duration;
 
         if (duration <= 0) {
@@ -222,7 +210,6 @@ class SmoothScroller {
                   duration,
                   easing,
                 },
-                false,
                 currentTime
               );
             });
@@ -280,7 +267,6 @@ class SmoothScroller {
             easing,
             stopScrollOnPointerDown,
           },
-          false,
           currentTime
         );
       });
