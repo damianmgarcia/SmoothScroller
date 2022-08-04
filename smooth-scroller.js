@@ -19,34 +19,29 @@ class SmoothScroller {
   } = {}) {
     const matchingScroller = this.#scrollerMap.get(scrollContainer);
 
+    const createScroller = (scrollContainer) => {
+      validateArgument("scrollContainer", scrollContainer, {
+        allowedPrototypes: [Element],
+      });
+
+      const scroller = new this(scrollContainer, smoothScrollerKey);
+
+      this.#scrollerMap.set(scrollContainer, scroller);
+
+      return scroller;
+    };
+
     const scroller = matchingScroller
       ? matchingScroller
-      : this.createScroller(scrollContainer);
+      : createScroller(scrollContainer);
 
-    return scroller.scroll({
+    return scroller.#scroll({
       x,
       y,
       duration,
       easing,
       stopScrollingOnPointerDown,
     });
-  }
-
-  static createScroller(scrollContainer) {
-    validateArgument("scrollContainer", scrollContainer, {
-      allowedPrototypes: [Element],
-    });
-
-    if (this.#scrollerMap.has(scrollContainer))
-      throw new Error(
-        "A SmoothScroller instance for this scrollContainer already exists"
-      );
-
-    const scroller = new this(scrollContainer, smoothScrollerKey);
-
-    this.#scrollerMap.set(scrollContainer, scroller);
-
-    return scroller;
   }
 
   static getScroller(scrollContainer) {
@@ -63,7 +58,7 @@ class SmoothScroller {
     validateArgument("key", key, {
       allowedValues: [smoothScrollerKey],
       customErrorMessage:
-        "Please use the SmoothScroller.scroll static method to scroll or the SmoothScroller.createScroller static method to create scrollers",
+        "Please use the SmoothScroller.scroll static method to scroll",
     });
 
     this.#scrollContainer = scrollContainer;
@@ -100,7 +95,7 @@ class SmoothScroller {
   #scrollStartingPointY = NaN;
   #scrollStartTime = NaN;
 
-  async scroll({
+  async #scroll({
     x = this.#scrollContainer.scrollLeft,
     y = this.#scrollContainer.scrollTop,
     duration = 600,
@@ -191,7 +186,7 @@ class SmoothScroller {
           return new Promise((resolve) => {
             this.#scrollResolve = resolve;
             this.#scrollRafId = requestAnimationFrame((currentTime) => {
-              this.scroll({
+              this.#scroll({
                 currentTime,
               });
             });
@@ -256,7 +251,7 @@ class SmoothScroller {
 
     if (elapsedTimeRatio < 1) {
       this.#scrollRafId = requestAnimationFrame((currentTime) => {
-        this.scroll({
+        this.#scroll({
           currentTime,
         });
       });
