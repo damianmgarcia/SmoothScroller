@@ -4,123 +4,110 @@ import {
 } from "https://damianmgarcia.com/scripts/modules/utilities.js";
 
 const browserHeuristics = getBrowserHeuristics();
+const smoothScrollerKey = Symbol("smoothScrollerKey");
 
 class SmoothScroller {
-  static scrollerMap = new Map();
+  static #scrollerMap = new Map();
+
   static scroll({
     scrollContainer,
     x,
     y,
     duration,
     easing,
-    stopScrollOnPointerDown,
+    stopScrollingOnPointerDown,
   } = {}) {
-    const matchingScroller = this.scrollerMap.get(scrollContainer);
+    const matchingScroller = this.#scrollerMap.get(scrollContainer);
 
     const scroller = matchingScroller
       ? matchingScroller
-      : new this(scrollContainer);
+      : this.createScroller(scrollContainer);
 
     return scroller.scroll({
       x,
       y,
       duration,
       easing,
-      stopScrollOnPointerDown,
+      stopScrollingOnPointerDown,
     });
   }
 
-  #scrollContainer;
-
-  constructor(scrollContainer) {
+  static createScroller(scrollContainer) {
     validateArgument("scrollContainer", scrollContainer, {
       allowedPrototypes: [Element],
     });
 
-    if (SmoothScroller.scrollerMap.has(scrollContainer))
+    if (this.#scrollerMap.has(scrollContainer))
       throw new Error(
         "A SmoothScroller instance for this scrollContainer already exists"
       );
 
+    const scroller = new this(scrollContainer, smoothScrollerKey);
+
+    this.#scrollerMap.set(scrollContainer, scroller);
+
+    return scroller;
+  }
+
+  static getScroller(scrollContainer) {
+    return this.#scrollerMap.get(scrollContainer);
+  }
+
+  static getAllScrollers() {
+    return Array.from(this.#scrollerMap.values());
+  }
+
+  #scrollContainer;
+
+  constructor(scrollContainer, key) {
+    validateArgument("key", key, {
+      allowedValues: [smoothScrollerKey],
+      customErrorMessage:
+        "Please use the SmoothScroller.scroll static method to scroll or the SmoothScroller.createScroller static method to create scrollers",
+    });
+
     this.#scrollContainer = scrollContainer;
 
-    this.#scrollContainer.addEventListener("pointerdown", (event) => {
-      event.target.setPointerCapture(event.pointerId);
-      if (this.#stopScrollOnPointerDown && this.#resolve)
-        this.abortPriorScrolls({
+    this.#scrollContainer.classList.add("smooth-scroller");
+
+    this.#scrollContainer.addEventListener("pointerdown", () => {
+      if (this.#scrollResolve && this.#stopScrollingOnPointerDown)
+        this.#stopScroll({
           interruptedBy: "Pointer down on scroll container",
         });
-
-      const smoothScrollPointerDownEvent = new CustomEvent(
-        "smoothScrollPointerDown",
-        {
-          bubbles: true,
-          cancelable: true,
-          detail: this.getEventData(),
-        }
-      );
-      this.#scrollContainer.dispatchEvent(smoothScrollPointerDownEvent);
     });
-
-    this.#scrollContainer.addEventListener("pointerup", () => {
-      const smoothScrollPointerUpEvent = new CustomEvent(
-        "smoothScrollPointerUp",
-        {
-          bubbles: true,
-          cancelable: true,
-          detail: this.getEventData(),
-        }
-      );
-      this.#scrollContainer.dispatchEvent(smoothScrollPointerUpEvent);
-    });
-
-    this.#scrollContainer.addEventListener("pointercancel", () => {
-      const smoothScrollPointerUpEvent = new CustomEvent(
-        "smoothScrollPointerUp",
-        {
-          bubbles: true,
-          cancelable: true,
-          detail: this.getEventData(),
-        }
-      );
-      this.#scrollContainer.dispatchEvent(smoothScrollPointerUpEvent);
-    });
-
-    SmoothScroller.scrollerMap.set(scrollContainer, this);
   }
 
-  get scrollContainer() {
-    return this.#scrollContainer;
-  }
-
-  #isScrolling = false;
-
-  get isScrolling() {
-    return this.#isScrolling;
+  getScrollerData() {
+    return {
+      scrollContainer: this.#scrollContainer,
+      scrolling: this.#scrolling,
+    };
   }
 
   #cubicBezierSolver;
-  #stopScrollOnPointerDown;
-  #scrollDistanceX;
-  #scrollDistanceY;
+  #scrolling = false;
+  #stopScrollingOnPointerDown;
+  #scrollDistanceX = NaN;
+  #scrollDistanceY = NaN;
+  #scrollDuration = NaN;
+  #scrollElapsedTime = NaN;
+  #scrollEndingPointX = NaN;
+  #scrollEndingPointY = NaN;
   #scrollRafId;
-  #scrollStartingPointX;
-  #scrollStartingPointY;
-  #startTime;
-  #duration;
-  #elapsedTime;
-  #resolve;
+  #scrollResolve;
+  #scrollStartingPointX = NaN;
+  #scrollStartingPointY = NaN;
+  #scrollStartTime = NaN;
 
-  async scroll(
-    {
-      x = this.#scrollContainer.scrollLeft,
-      y = this.#scrollContainer.scrollTop,
-      duration = 600,
-      easing = "ease",
-      stopScrollOnPointerDown = true,
-    } = {},
-    currentTime = NaN
-  ) {
+  async scroll({
+    x = this.#scrollContainer.scrollLeft,
+    y = this.#scrollContainer.scrollTop,
+    duration = 600,
+    easing = "ease",
+    stopScrollingOnPointerDown = true,
+    currentTime = NaN,
+  } = {}) {
     const isNewScroll = Number.isNaN(currentTime);
     if (isNewScroll) {
       validateArgument("x", x, {
@@ -137,13 +124,16 @@ class SmoothScroller {
         allowFiniteNumbersOnly: true,
       });
 
-      validateArgument("stopScrollOnPointerDown", stopScrollOnPointerDown, {
-        allowedTypes: ["boolean"],
-      });
+      validateArgument(
+        "stopScrollingOnPointerDown",
+        stopScrollingOnPointerDown,
+        {
+          allowedTypes: ["boolean"],
+        }
+      );
 
-      if (typeof easing === "string") {
+      if (typeof easing === "string")
         easing = CubicBezierSolver.easingKeywordMap.get(easing);
-      }
 
       if (!this.#cubicBezierSolver) {
         this.#cubicBezierSolver = new CubicBezierSolver(easing);
@@ -156,15 +146,13 @@ class SmoothScroller {
           this.#cubicBezierSolver = new CubicBezierSolver(easing);
       }
 
-      if (this.#resolve)
-        this.abortPriorScrolls({ interruptedBy: "New smooth scroll" });
+      if (this.#scrollResolve)
+        this.#stopScroll({ interruptedBy: "New smooth scroll" });
 
-      if (browserHeuristics.isIOsSafari) {
-        this.#scrollContainer.style.setProperty("overflow", "hidden");
-      } // Stops Safari's momentum scrolling to prevent scroll interference
+      if (browserHeuristics.isIOsSafari)
+        this.#scrollContainer.style.setProperty("overflow", "hidden"); // Stops Safari's momentum scrolling to prevent scroll interference
 
-      this.#isScrolling = true;
-      this.#stopScrollOnPointerDown = stopScrollOnPointerDown;
+      this.#stopScrollingOnPointerDown = stopScrollingOnPointerDown;
       this.#scrollStartingPointX = this.#scrollContainer.scrollLeft;
       this.#scrollStartingPointY = this.#scrollContainer.scrollTop;
 
@@ -187,136 +175,138 @@ class SmoothScroller {
       const absoluteScrollDistanceY = Math.abs(this.#scrollDistanceY);
       if (absoluteScrollDistanceX < 1 && absoluteScrollDistanceY < 1) {
         return new Promise((resolve) => {
-          this.#resolve = resolve;
-          return this.abortPriorScrolls();
+          this.#scrollResolve = resolve;
+          return this.#stopScroll();
         });
       } else if (absoluteScrollDistanceX >= 1 || absoluteScrollDistanceY >= 1) {
-        this.#duration = duration;
+        this.#scrollDuration = duration;
 
-        if (duration <= 0) {
+        if (this.#scrollDuration <= 0) {
           this.#scrollContainer.scrollTo(limitCorrectedX, limitCorrectedY);
           return new Promise((resolve) => {
-            this.#resolve = resolve;
-            return this.abortPriorScrolls();
+            this.#scrollResolve = resolve;
+            return this.#stopScroll();
           });
-        } else if (duration > 0) {
+        } else if (this.#scrollDuration > 0) {
           return new Promise((resolve) => {
-            this.#resolve = resolve;
+            this.#scrollResolve = resolve;
             this.#scrollRafId = requestAnimationFrame((currentTime) => {
-              this.scroll(
-                {
-                  x,
-                  y,
-                  duration,
-                  easing,
-                },
-                currentTime
-              );
+              this.scroll({
+                currentTime,
+              });
             });
           });
         }
       }
     }
 
-    if (!this.#startTime) {
-      this.#startTime = currentTime;
+    if (!this.#scrollStartTime) {
+      this.#scrollStartTime = currentTime;
+      this.#scrolling = true;
 
-      const smoothScrollStartEvent = new CustomEvent("smoothScrollStart", {
-        bubbles: true,
-        cancelable: true,
-        detail: this.getEventData(),
-      });
-      this.#scrollContainer.dispatchEvent(smoothScrollStartEvent);
+      this.#scrollContainer.dispatchEvent(
+        new CustomEvent("smoothScrollerScrollStart", {
+          bubbles: true,
+          cancelable: true,
+          detail: this.#getScrollEventData(),
+        })
+      );
     }
 
-    this.#elapsedTime = currentTime - this.#startTime;
-    const elapsedTimeRatio = Math.min(this.#elapsedTime / duration, 1);
+    this.#scrollContainer.dispatchEvent(
+      new CustomEvent("smoothScrollerScroll", {
+        bubbles: true,
+        cancelable: true,
+        detail: this.#getScrollEventData(),
+      })
+    );
+
+    this.#scrollElapsedTime = currentTime - this.#scrollStartTime;
+    const elapsedTimeRatio = Math.min(
+      this.#scrollElapsedTime / this.#scrollDuration,
+      1
+    );
 
     const scrollRatio = this.#cubicBezierSolver.solve(
       elapsedTimeRatio,
-      1 / (200 * duration)
+      1 / (200 * this.#scrollDuration)
     );
 
+    const getNextScrollPosition = (startingPoint, scrollDistance) =>
+      startingPoint + scrollRatio * scrollDistance;
+
     if (this.#scrollDistanceX) {
-      const nextScrollX =
-        this.#scrollStartingPointX + scrollRatio * this.#scrollDistanceX;
-      this.#scrollContainer.scrollLeft = nextScrollX;
+      const nextScrollLeft = getNextScrollPosition(
+        this.#scrollStartingPointX,
+        this.#scrollDistanceX
+      );
+      this.#scrollContainer.scrollLeft = nextScrollLeft;
     }
 
     if (this.#scrollDistanceY) {
-      const nextScrollY =
-        this.#scrollStartingPointY + scrollRatio * this.#scrollDistanceY;
-      this.#scrollContainer.scrollTop = nextScrollY;
+      const nextScrollTop = getNextScrollPosition(
+        this.#scrollStartingPointY,
+        this.#scrollDistanceY
+      );
+      this.#scrollContainer.scrollTop = nextScrollTop;
     }
 
-    const smoothScrollEvent = new CustomEvent("smoothScroll", {
-      bubbles: true,
-      cancelable: true,
-      detail: this.getEventData(),
-    });
-    this.#scrollContainer.dispatchEvent(smoothScrollEvent);
+    this.#scrollEndingPointX = this.#scrollContainer.scrollLeft;
+    this.#scrollEndingPointY = this.#scrollContainer.scrollTop;
 
     if (elapsedTimeRatio < 1) {
-      this.#isScrolling = true;
       this.#scrollRafId = requestAnimationFrame((currentTime) => {
-        this.scroll(
-          {
-            x,
-            y,
-            duration,
-            easing,
-            stopScrollOnPointerDown,
-          },
-          currentTime
-        );
+        this.scroll({
+          currentTime,
+        });
       });
     } else if (elapsedTimeRatio >= 1) {
-      return this.abortPriorScrolls();
+      return this.#stopScroll();
     }
   }
 
-  abortPriorScrolls(extraData = {}) {
-    if (this.#resolve) this.#resolve(this.getEventData(extraData));
+  #stopScroll(extraData = {}) {
+    const eventData = this.#getScrollEventData(extraData);
 
-    const smoothScrollStopEvent = new CustomEvent("smoothScrollStop", {
-      bubbles: true,
-      cancelable: true,
-      detail: this.getEventData(extraData),
-    });
-    this.#scrollContainer.dispatchEvent(smoothScrollStopEvent);
+    this.#scrollResolve(eventData);
 
-    if (browserHeuristics.isIOsSafari) {
+    this.#scrollContainer.dispatchEvent(
+      new CustomEvent("smoothScrollerScrollStop", {
+        bubbles: true,
+        cancelable: true,
+        detail: eventData,
+      })
+    );
+
+    if (browserHeuristics.isIOsSafari)
       this.#scrollContainer.style.removeProperty("overflow");
-    }
 
     cancelAnimationFrame(this.#scrollRafId);
-    this.#scrollStartingPointX = null;
-    this.#scrollStartingPointY = null;
-    this.#scrollDistanceX = null;
-    this.#scrollDistanceY = null;
-    this.#startTime = null;
-    this.#duration = null;
-    this.#elapsedTime = null;
-    this.#resolve = null;
-    this.#isScrolling = false;
+    this.#scrolling = false;
+    this.#scrollDistanceX = NaN;
+    this.#scrollDistanceY = NaN;
+    this.#scrollDuration = NaN;
+    this.#scrollElapsedTime = NaN;
+    this.#scrollEndingPointX = NaN;
+    this.#scrollEndingPointY = NaN;
+    this.#scrollResolve = null;
+    this.#scrollStartingPointX = NaN;
+    this.#scrollStartingPointY = NaN;
+    this.#scrollStartTime = NaN;
   }
 
-  getEventData(extraData) {
+  #getScrollEventData(extraData) {
     const eventData = {
-      interruptedBy: null,
-      startPoint: [this.#scrollStartingPointX, this.#scrollStartingPointY],
-      endPoint: [
-        this.#scrollContainer.scrollLeft,
-        this.#scrollContainer.scrollTop,
-      ],
-      distance: Math.hypot(
-        Math.abs(this.#scrollStartingPointX - this.#scrollContainer.scrollLeft),
-        Math.abs(this.#scrollStartingPointY - this.#scrollContainer.scrollTop)
-      ),
-      duration: this.#duration,
-      elapsedTime: this.#elapsedTime,
       scrollContainer: this.#scrollContainer,
-      smoothScroller: this,
+      startPoint: [this.#scrollStartingPointX, this.#scrollStartingPointY],
+      endPoint: [this.#scrollEndingPointX, this.#scrollEndingPointY],
+      distance: Math.hypot(
+        Math.abs(this.#scrollStartingPointX - this.#scrollEndingPointX),
+        Math.abs(this.#scrollStartingPointY - this.#scrollEndingPointY)
+      ),
+      duration: this.#scrollDuration,
+      elapsedTime: this.#scrollElapsedTime,
+      interruptedBy: null,
     };
 
     if (extraData && typeof extraData === "object")
@@ -370,14 +360,57 @@ class CubicBezierSolver {
   #cy;
 
   constructor(controlPoints) {
-    const validatedControlPoints = easingValidator(controlPoints);
+    const controlPointValidator = () => {
+      validateArgument("controlPoints", controlPoints, {
+        allowedTypes: ["string", "array"],
+      });
+
+      if (typeof controlPoints === "string") {
+        validateArgument("controlPoints", controlPoints, {
+          allowedValues: Array.from(CubicBezierSolver.easingKeywordMap.keys()),
+        });
+        controlPoints = CubicBezierSolver.easingKeywordMap.get(controlPoints);
+      } else if (Array.isArray(controlPoints)) {
+        validateArgument("controlPoints", controlPoints.length, {
+          allowedValues: [4],
+          customErrorMessage:
+            "controlPoints must comprise 4 numbers, e.g. [ 0, 0.25, 0.1, 0.25]",
+        });
+        controlPoints.forEach((controlPoint) =>
+          validateArgument("controlPoints values", controlPoint, {
+            allowedTypes: ["number"],
+          })
+        );
+        validateArgument("x1", controlPoints[0], {
+          allowedMin: 0,
+          allowedMax: 1,
+        });
+        validateArgument("x2", controlPoints[2], {
+          allowedMin: 0,
+          allowedMax: 1,
+        });
+
+        // Prevent precision loss through y-value limitation; no BigInts
+        const yLimiter = (y) => {
+          const limit = Math.floor(Number.MAX_SAFE_INTEGER / 6);
+          return Math.abs(y) < limit ? y : limit;
+        };
+
+        controlPoints[1] = yLimiter(controlPoints[1]);
+        controlPoints[3] = yLimiter(controlPoints[3]);
+      }
+
+      return controlPoints;
+    };
+
+    const validatedControlPoints = controlPointValidator();
     const [p1x, p1y, p2x, p2y] = validatedControlPoints;
 
     this.#controlPoints = {
-      p1x: p1x,
-      p1y: p1y,
-      p2x: p2x,
-      p2y: p2y,
+      p1x,
+      p1y,
+      p2x,
+      p2y,
     };
 
     this.#cx = 3.0 * p1x;
@@ -387,49 +420,6 @@ class CubicBezierSolver {
     this.#cy = 3.0 * p1y;
     this.#by = 3.0 * (p2y - p1y) - this.#cy;
     this.#ay = 1.0 - this.#cy - this.#by;
-
-    function easingValidator(easing) {
-      validateArgument("easing", easing, {
-        allowedTypes: ["string", "array"],
-      });
-
-      if (typeof easing === "string") {
-        validateArgument("easing", easing, {
-          allowedValues: Array.from(CubicBezierSolver.easingKeywordMap.keys()),
-        });
-        easing = CubicBezierSolver.easingKeywordMap.get(easing);
-      } else if (Array.isArray(easing)) {
-        validateArgument("easing", easing.length, {
-          allowedValues: [4],
-          customErrorMessage:
-            "easing must comprise 4 numbers, e.g. [ 0, 0.25, 0.1, 0.25]",
-        });
-        easing.forEach((controlPoint) =>
-          validateArgument("easing values", controlPoint, {
-            allowedTypes: ["number"],
-          })
-        );
-        validateArgument("x1", easing[0], {
-          allowedMin: 0,
-          allowedMax: 1,
-        });
-        validateArgument("x2", easing[2], {
-          allowedMin: 0,
-          allowedMax: 1,
-        });
-
-        // Prevent precision loss through y-value limitation; no BigInts
-        easing[1] = yLimiter(easing[1]);
-        easing[3] = yLimiter(easing[3]);
-
-        function yLimiter(y) {
-          const limit = Math.floor(Number.MAX_SAFE_INTEGER / 6);
-          return Math.abs(y) < limit ? y : limit;
-        }
-      }
-
-      return easing;
-    }
   }
 
   controlPointsMatchCurrentControlPoints(p1x, p1y, p2x, p2y) {
