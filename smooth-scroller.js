@@ -171,11 +171,13 @@ class SmoothScroller {
       if (absoluteScrollDistanceX < 1 && absoluteScrollDistanceY < 1) {
         return new Promise((resolve) => {
           this.#scrollResolve = resolve;
-          return this.#stopScroll();
+          return this.#stopScroll({
+            interruptedBy:
+              "Scroll distance is below minimum scrollable distance",
+          });
         });
       } else if (absoluteScrollDistanceX >= 1 || absoluteScrollDistanceY >= 1) {
         this.#scrollDuration = duration;
-
         if (this.#scrollDuration <= 0) {
           this.#scrollContainer.scrollTo(limitCorrectedX, limitCorrectedY);
           return new Promise((resolve) => {
