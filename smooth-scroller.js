@@ -265,7 +265,7 @@ class SmoothScroller {
   #stopScroll(extraData = {}) {
     const eventData = this.#getScrollEventData(extraData);
 
-    this.#scrollResolve(eventData);
+    if (this.#scrollResolve) this.#scrollResolve(eventData);
 
     this.#scrollContainer.dispatchEvent(
       new CustomEvent("smoothScrollerScrollStop", {
